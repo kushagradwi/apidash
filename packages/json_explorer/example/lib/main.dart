@@ -1,8 +1,9 @@
 import 'dart:convert';
-
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
+//import 'package:http/http.dart' as http;
+
 import 'package:json_explorer/json_explorer.dart';
 import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -335,12 +336,17 @@ class _JsonExplorerPageState extends State<JsonExplorerPage> {
       '${store.focusedSearchResultIndex + 1} of ${store.searchResults.length}';
 
   Future _loadJsonDataFrom(String url) async {
-    debugPrint('Calling Json API');
-    final data = await http.read(Uri.parse(url));
-    debugPrint('Done!');
-    final dynamic decoded = json.decode(data);
-    store.buildNodes(decoded, areAllCollapsed: true);
+    try {
+      debugPrint('Calling Json API');
+      final response = await Dio().get(url);
+      debugPrint('Done!');
+      final dynamic decoded = json.decode(response.data);
+      store.buildNodes(decoded, areAllCollapsed: true);
+    } catch (e) {
+      debugPrint('Error fetching data: $e');
+    }
   }
+
 
   void _printNode(NodeViewModelState node) {
     if (node.isRoot) {

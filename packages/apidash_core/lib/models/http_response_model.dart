@@ -2,8 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:collection/collection.dart' show mergeMaps;
-import 'package:http/http.dart';
+import 'package:dio/dio.dart';
 import 'package:http_parser/http_parser.dart';
 import '../extensions/extensions.dart';
 import '../utils/utils.dart';
@@ -68,20 +67,26 @@ class HttpResponseModel with _$HttpResponseModel {
     required Response response,
     Duration? time,
   }) {
-    final responseHeaders = mergeMaps(
-        {HttpHeaders.contentLengthHeader: response.contentLength.toString()},
-        response.headers);
+    // Convert Dio headers to Map<String, String> format
+    Map<String, String> responseHeaders = {};
+    response.headers.forEach((key, value) {
+      responseHeaders[key] = value.join(', ');
+    });
+ 
     MediaType? mediaType = getMediaTypeFromHeaders(responseHeaders);
+
+    // Process response body according to media type
     final body = (mediaType?.subtype == kSubTypeJson)
-        ? utf8.decode(response.bodyBytes)
-        : response.body;
+        ? utf8.decode(response.data is Uint8List ? response.data : utf8.encode(response.data.toString()))
+        : response.data.toString();
+
     return HttpResponseModel(
       statusCode: response.statusCode,
       headers: responseHeaders,
-      requestHeaders: response.request?.headers,
+      requestHeaders: Map<String, String>.from(response.requestOptions.headers),
       body: body,
-      formattedBody: formatBody(body, mediaType),
-      bodyBytes: response.bodyBytes,
+      formattedBody: formatBody(body, Headers.fromMap({for (var entry in responseHeaders.entries) entry.key: [entry.value]})),
+      bodyBytes: response.data is Uint8List ? response.data : Uint8List.fromList(utf8.encode(response.data.toString())),
       time: time,
     );
   }

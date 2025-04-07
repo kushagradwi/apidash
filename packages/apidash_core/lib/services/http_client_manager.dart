@@ -1,46 +1,55 @@
 import 'dart:io';
 import 'dart:collection';
+import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/io_client.dart';
+import 'package:dio/dio.dart';
 
-http.Client createHttpClientWithNoSSL() {
-  var ioClient = HttpClient()
-    ..badCertificateCallback =
-        (X509Certificate cert, String host, int port) => true;
-  return IOClient(ioClient);
+Dio createDioClientWithNoSSL() {
+  var dio = Dio();
+  // Use IOHttpClientAdapter for improved compatibility
+  if (dio.httpClientAdapter is IOHttpClientAdapter) {
+    (dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate = (client) {
+      client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+      return client;
+    };
+  }
+  return dio;
 }
 
-class HttpClientManager {
-  static final HttpClientManager _instance = HttpClientManager._internal();
+class DioHttpClientManager {
+  static final DioHttpClientManager _instance = DioHttpClientManager._internal();
   static const int _maxCancelledRequests = 100;
-  final Map<String, http.Client> _clients = {};
+  final Map<String, Dio> _clients = {};
   final Queue<String> _cancelledRequests = Queue();
 
-  factory HttpClientManager() {
+  factory DioHttpClientManager() {
     return _instance;
   }
 
-  HttpClientManager._internal();
+  DioHttpClientManager._internal();
 
-  http.Client createClient(
+  Dio createClient(
     String requestId, {
     bool noSSL = false,
   }) {
-    final client =
-        (noSSL && !kIsWeb) ? createHttpClientWithNoSSL() : http.Client();
-    _clients[requestId] = client;
-    return client;
+    // Use SSL bypass only on non-web platforms
+    final dio = (noSSL && !kIsWeb) ? createDioClientWithNoSSL() : Dio();
+    _clients[requestId] = dio;
+    return dio;
   }
 
   void cancelRequest(String? requestId) {
     if (requestId != null && _clients.containsKey(requestId)) {
-      _clients[requestId]?.close();
-      _clients.remove(requestId);
+      try {
+        _clients[requestId]?.close(force: true);
+        _clients.remove(requestId);
 
-      _cancelledRequests.addLast(requestId);
-      while (_cancelledRequests.length > _maxCancelledRequests) {
-        _cancelledRequests.removeFirst();
+        _cancelledRequests.addLast(requestId);
+        while (_cancelledRequests.length > _maxCancelledRequests) {
+          _cancelledRequests.removeFirst();
+        }
+      } catch (e) {
+        debugPrint("Error cancelling request $requestId: $e");
       }
     }
   }
@@ -51,8 +60,12 @@ class HttpClientManager {
 
   void closeClient(String requestId) {
     if (_clients.containsKey(requestId)) {
-      _clients[requestId]?.close();
-      _clients.remove(requestId);
+      try {
+        _clients[requestId]?.close(force: true);
+        _clients.remove(requestId);
+      } catch (e) {
+        debugPrint("Error closing client $requestId: $e");
+      }
     }
   }
 

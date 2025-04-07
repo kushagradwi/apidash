@@ -1,16 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import 'package:seed/seed.dart';
 import '../consts.dart';
 import '../models/models.dart';
 import '../utils/utils.dart';
 import 'http_client_manager.dart';
 
-typedef HttpResponse = http.Response;
+typedef HttpResponse = Response<dynamic>;
 
-final httpClientManager = HttpClientManager();
+final httpClientManager = DioHttpClientManager();
 
 Future<(HttpResponse?, Duration?, String?)> sendHttpRequest(
   String requestId,
@@ -35,8 +35,7 @@ Future<(HttpResponse?, Duration?, String?)> sendHttpRequest(
     try {
       Stopwatch stopwatch = Stopwatch()..start();
       if (apiType == APIType.rest) {
-        var isMultiPartRequest =
-            requestModel.bodyContentType == ContentType.formdata;
+        var isMultiPartRequest = requestModel.bodyContentType == ContentType.formdata;
 
         if (kMethodsWithBody.contains(requestModel.method)) {
           var requestBody = requestModel.body;
@@ -44,65 +43,80 @@ Future<(HttpResponse?, Duration?, String?)> sendHttpRequest(
             var contentLength = utf8.encode(requestBody).length;
             if (contentLength > 0) {
               body = requestBody;
-              headers[HttpHeaders.contentLengthHeader] =
-                  contentLength.toString();
+              headers[HttpHeaders.contentLengthHeader] = contentLength.toString();
               if (!requestModel.hasContentTypeHeader) {
-                headers[HttpHeaders.contentTypeHeader] =
-                    requestModel.bodyContentType.header;
+                headers[HttpHeaders.contentTypeHeader] = requestModel.bodyContentType.header;
               }
             }
           }
+          // MultiPart Request  mirated to Dio
           if (isMultiPartRequest) {
-            var multiPartRequest = http.MultipartRequest(
-              requestModel.method.name.toUpperCase(),
-              requestUrl,
-            );
-            multiPartRequest.headers.addAll(headers);
-            for (var formData in requestModel.formDataList) {
-              if (formData.type == FormDataType.text) {
-                multiPartRequest.fields.addAll({formData.name: formData.value});
+            Map<String, dynamic> formDataMap = {};
+
+            for (var item in requestModel.formDataList) {
+              if (item.type == FormDataType.text) {
+                formDataMap[item.name] = item.value;
               } else {
-                multiPartRequest.files.add(
-                  await http.MultipartFile.fromPath(
-                    formData.name,
-                    formData.value,
-                  ),
-                );
+                formDataMap[item.name] = await MultipartFile.fromFile(item.value);
               }
             }
-            http.StreamedResponse multiPartResponse =
-                await multiPartRequest.send();
+
+            FormData formData = FormData.fromMap(formDataMap);
+
+            response = await client.post(
+              requestUrl.toString(),
+              data: formData,
+              options: Options(headers: headers, validateStatus: (status) => true),
+            );
             stopwatch.stop();
-            http.Response convertedMultiPartResponse =
-                await convertStreamedResponse(multiPartResponse);
-            return (convertedMultiPartResponse, stopwatch.elapsed, null);
+            return (response, stopwatch.elapsed, null);
           }
         }
+
         switch (requestModel.method) {
           case HTTPVerb.get:
-            response = await client.get(requestUrl, headers: headers);
+            response = await client.get(
+              requestUrl.toString(),
+              options: Options(headers: headers, validateStatus: (status) => true),
+            );
             break;
           case HTTPVerb.head:
-            response = await client.head(requestUrl, headers: headers);
+            response = await client.head(
+              requestUrl.toString(),
+              options: Options(headers: headers, validateStatus: (status) => true),
+            );
             break;
           case HTTPVerb.post:
-            response =
-                await client.post(requestUrl, headers: headers, body: body);
+            response = await client.post(
+              requestUrl.toString(),
+              data: body,
+              options: Options(headers: headers, validateStatus: (status) => true),
+            );
             break;
           case HTTPVerb.put:
-            response =
-                await client.put(requestUrl, headers: headers, body: body);
+            response = await client.put(
+              requestUrl.toString(),
+              data: body,
+              options: Options(headers: headers, validateStatus: (status) => true),
+            );
             break;
           case HTTPVerb.patch:
-            response =
-                await client.patch(requestUrl, headers: headers, body: body);
+            response = await client.patch(
+              requestUrl.toString(),
+              data: body,
+              options: Options(headers: headers, validateStatus: (status) => true),
+            );
             break;
           case HTTPVerb.delete:
-            response =
-                await client.delete(requestUrl, headers: headers, body: body);
+            response = await client.delete(
+              requestUrl.toString(),
+              data: body,
+              options: Options(headers: headers, validateStatus: (status) => true),
+            );
             break;
         }
       }
+
       if (apiType == APIType.graphql) {
         var requestBody = getGraphQLBody(requestModel);
         if (requestBody != null) {
@@ -116,14 +130,14 @@ Future<(HttpResponse?, Duration?, String?)> sendHttpRequest(
           }
         }
         response = await client.post(
-          requestUrl,
-          headers: headers,
-          body: body,
+          requestUrl.toString(),
+          data: body,
+          options: Options(headers: headers, validateStatus: (status) => true),
         );
       }
       stopwatch.stop();
       return (response, stopwatch.elapsed, null);
-    } catch (e) {
+    } on DioException catch (e) {
       if (httpClientManager.wasRequestCancelled(requestId)) {
         return (null, null, kMsgRequestCancelled);
       }

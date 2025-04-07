@@ -309,7 +309,7 @@ class CollectionStateNotifier
         response: responseRec.$1!,
         time: responseRec.$2!,
       );
-      int statusCode = responseRec.$1!.statusCode;
+      int statusCode = responseRec.$1?.statusCode ?? -1;
       newRequestModel = requestModel.copyWith(
         responseStatus: statusCode,
         message: kResponseCodeReasons[statusCode],
